@@ -225,6 +225,11 @@ def DLLExport : InheritableAttr {
   let Spellings = ["dllexport"];
 }
 
+def Dtrace : InheritableAttr {
+  let Spellings = ["__dtrace"];
+  let Subjects = [Tag];
+}
+
 def DLLImport : InheritableAttr {
   let Spellings = ["dllimport"];
 }

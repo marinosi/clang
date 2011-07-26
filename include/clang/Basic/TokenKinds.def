@@ -346,6 +346,10 @@ KEYWORD(__fastcall                  , KEYALL)
 KEYWORD(__thiscall                  , KEYALL)
 KEYWORD(__forceinline               , KEYALL)
 
+// Dtrace Extension. Should it be __dtrace only perhaps?
+// XXXIM: KEYALL or KEYC99
+KEYWORD(__dtrace_probe              , KEYC99)
+
 // TESLA Extension.
 KEYWORD(__tesla_assert              , KEYALL)
 

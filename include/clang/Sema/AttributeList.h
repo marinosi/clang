@@ -77,7 +77,7 @@ public:
         return Mem;
       }
   };
-  
+
   enum Kind {             // Please keep this list alphabetized.
     AT_IBAction,          // Clang-specific.
     AT_IBOutlet,          // Clang-specific.
@@ -102,6 +102,7 @@ public:
     AT_device,
     AT_dllexport,
     AT_dllimport,
+    AT_dtrace,                  // DtraceInstrumenter plugin
     AT_ext_vector_type,
     AT_fastcall,
     AT_format,
@@ -170,11 +171,11 @@ public:
 
   IdentifierInfo *getName() const { return AttrName; }
   SourceLocation getLoc() const { return AttrLoc; }
-  
+
   bool hasScope() const { return ScopeName; }
   IdentifierInfo *getScopeName() const { return ScopeName; }
   SourceLocation getScopeLoc() const { return ScopeLoc; }
-  
+
   IdentifierInfo *getParameterName() const { return ParmName; }
   SourceLocation getParameterLoc() const { return ParmLoc; }
 
@@ -260,7 +261,7 @@ inline AttributeList *addAttributeLists(AttributeList *Left,
 /// Stores, in addition to the list proper, whether or not an actual list was
 /// (as opposed to an empty list, which may be ill-formed in some places) and
 /// the source range of the list.
-struct CXX0XAttributeList { 
+struct CXX0XAttributeList {
   AttributeList *AttrList;
   SourceRange Range;
   bool HasAttr;

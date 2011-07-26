@@ -312,22 +312,22 @@ static void HandleIBOutletCollection(Decl *d, const AttributeList &Attr,
   }
   if (const ValueDecl *VD = dyn_cast<ValueDecl>(d))
     if (!VD->getType()->getAs<ObjCObjectPointerType>()) {
-      S.Diag(Attr.getLoc(), diag::err_iboutletcollection_object_type) 
+      S.Diag(Attr.getLoc(), diag::err_iboutletcollection_object_type)
         << VD->getType() << 0;
       return;
     }
   if (const ObjCPropertyDecl *PD = dyn_cast<ObjCPropertyDecl>(d))
     if (!PD->getType()->getAs<ObjCObjectPointerType>()) {
-      S.Diag(Attr.getLoc(), diag::err_iboutletcollection_object_type) 
+      S.Diag(Attr.getLoc(), diag::err_iboutletcollection_object_type)
         << PD->getType() << 1;
       return;
     }
-  
+
   IdentifierInfo *II = Attr.getParameterName();
   if (!II)
     II = &S.Context.Idents.get("id");
-  
-  ParsedType TypeRep = S.getTypeName(*II, Attr.getLoc(), 
+
+  ParsedType TypeRep = S.getTypeName(*II, Attr.getLoc(),
                         S.getScopeForContext(d->getDeclContext()->getParent()));
   if (!TypeRep) {
     S.Diag(Attr.getLoc(), diag::err_iboutletcollection_type) << II;
@@ -838,15 +838,15 @@ bool Sema::CheckNoReturnAttr(const AttributeList &attr) {
 
 static void HandleAnalyzerNoReturnAttr(Decl *d, const AttributeList &Attr,
                                        Sema &S) {
-  
+
   // The checking path for 'noreturn' and 'analyzer_noreturn' are different
   // because 'analyzer_noreturn' does not impact the type.
-  
+
   if (Attr.getNumArgs() != 0) {
     S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << 0;
     return;
   }
-  
+
   if (!isFunctionOrMethod(d) && !isa<BlockDecl>(d)) {
     ValueDecl *VD = dyn_cast<ValueDecl>(d);
     if (VD == 0 || (!VD->getType()->isBlockPointerType()
@@ -858,7 +858,7 @@ static void HandleAnalyzerNoReturnAttr(Decl *d, const AttributeList &Attr,
       return;
     }
   }
-  
+
   d->addAttr(::new (S.Context) AnalyzerNoReturnAttr(Attr.getLoc(), S.Context));
 }
 
@@ -867,20 +867,20 @@ static void HandleVecReturnAttr(Decl *d, const AttributeList &Attr,
                                        Sema &S) {
 /*
   Returning a Vector Class in Registers
-  
-  According to the PPU ABI specifications, a class with a single member of 
+
+  According to the PPU ABI specifications, a class with a single member of
   vector type is returned in memory when used as the return value of a function.
   This results in inefficient code when implementing vector classes. To return
   the value in a single vector register, add the vecreturn attribute to the
   class definition. This attribute is also applicable to struct types.
-  
+
   Example:
-  
+
   struct Vector
   {
     __vector float xyzw;
   } __attribute__((vecreturn));
-  
+
   Vector Add(Vector lhs, Vector rhs)
   {
     Vector result;
@@ -1037,7 +1037,7 @@ static void HandleDeprecatedAttr(Decl *d, const AttributeList &Attr, Sema &S) {
     S.Diag(Attr.getLoc(), diag::err_attribute_too_many_arguments) << 1;
     return;
   }
-  
+
   // Handle the case where deprecated attribute has a text message.
   llvm::StringRef Str;
   if (NumArgs == 1) {
@@ -1059,13 +1059,13 @@ static void HandleUnavailableAttr(Decl *d, const AttributeList &Attr, Sema &S) {
     S.Diag(Attr.getLoc(), diag::err_attribute_too_many_arguments) << 1;
     return;
   }
-  
+
   // Handle the case where unavailable attribute has a text message.
   llvm::StringRef Str;
   if (NumArgs == 1) {
     StringLiteral *SE = dyn_cast<StringLiteral>(Attr.getArg(0));
     if (!SE) {
-      S.Diag(Attr.getArg(0)->getLocStart(), 
+      S.Diag(Attr.getArg(0)->getLocStart(),
              diag::err_attribute_not_string) << "unavailable";
       return;
     }
@@ -1343,7 +1343,7 @@ static void HandleWarnUnusedResult(Decl *D, const AttributeList &Attr, Sema &S) 
       << Attr.getName() << 1;
       return;
     }
-  
+
   D->addAttr(::new (S.Context) WarnUnusedResultAttr(Attr.getLoc(), S.Context));
 }
 
@@ -1390,7 +1390,7 @@ static void HandleWeakImportAttr(Decl *D, const AttributeList &Attr, Sema &S) {
   } else if (!(S.LangOpts.ObjCNonFragileABI && isa<ObjCInterfaceDecl>(D))) {
     // Don't issue the warning for darwin as target; yet, ignore the attribute.
     if (S.Context.Target.getTriple().getOS() != llvm::Triple::Darwin ||
-        !isa<ObjCInterfaceDecl>(D)) 
+        !isa<ObjCInterfaceDecl>(D))
       S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
         << Attr.getName() << ExpectedVariableOrFunction;
       return;
@@ -1461,7 +1461,7 @@ static void HandleSectionAttr(Decl *D, const AttributeList &Attr, Sema &S) {
     S.Diag(SE->getLocStart(), diag::err_attribute_section_local_variable);
     return;
   }
-  
+
   D->addAttr(::new (S.Context) SectionAttr(Attr.getLoc(), S.Context,
                                            SE->getString()));
 }
@@ -1664,19 +1664,19 @@ static FormatAttrKind getFormatAttrKind(llvm::StringRef Format) {
   if (Format == "gcc_diag" || Format == "gcc_cdiag" ||
       Format == "gcc_cxxdiag" || Format == "gcc_tdiag")
     return IgnoredFormat;
-  
+
   return InvalidFormat;
 }
 
 /// Handle __attribute__((init_priority(priority))) attributes based on
 /// http://gcc.gnu.org/onlinedocs/gcc/C_002b_002b-Attributes.html
-static void HandleInitPriorityAttr(Decl *d, const AttributeList &Attr, 
+static void HandleInitPriorityAttr(Decl *d, const AttributeList &Attr,
                                    Sema &S) {
   if (!S.getLangOptions().CPlusPlus) {
     S.Diag(Attr.getLoc(), diag::warn_attribute_ignored) << Attr.getName();
     return;
   }
-  
+
   if (!isa<VarDecl>(d) || S.getCurFunctionOrMethodDecl()) {
     S.Diag(Attr.getLoc(), diag::err_init_priority_object_attr);
     Attr.setInvalid();
@@ -1690,14 +1690,14 @@ static void HandleInitPriorityAttr(Decl *d, const AttributeList &Attr,
     Attr.setInvalid();
     return;
   }
-  
+
   if (Attr.getNumArgs() != 1) {
     S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << 1;
     Attr.setInvalid();
     return;
   }
   Expr *priorityExpr = Attr.getArg(0);
-  
+
   llvm::APSInt priority(32);
   if (priorityExpr->isTypeDependent() || priorityExpr->isValueDependent() ||
       !priorityExpr->isIntegerConstantExpr(priority, S.Context)) {
@@ -1752,10 +1752,10 @@ static void HandleFormatAttr(Decl *d, const AttributeList &Attr, Sema &S) {
 
   // Check for supported formats.
   FormatAttrKind Kind = getFormatAttrKind(Format);
-  
+
   if (Kind == IgnoredFormat)
     return;
-  
+
   if (Kind == InvalidFormat) {
     S.Diag(Attr.getLoc(), diag::warn_attribute_type_not_supported)
       << "format" << Attr.getParameterName()->getName();
@@ -1965,7 +1965,7 @@ static void HandleAlignedAttr(Decl *D, const AttributeList &Attr, Sema &S) {
     S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << 1;
     return;
   }
-  
+
   //FIXME: The C++0x version of this attribute has more limited applicabilty
   //       than GNU's, and should error out when it is used to specify a
   //       weaker alignment, rather than being silently ignored.
@@ -2269,6 +2269,21 @@ static void HandleDeviceAttr(Decl *d, const AttributeList &Attr, Sema &S) {
   }
 }
 
+static void HandleDtraceAttr(Decl *d, const AttributeList &Attr, Sema &S) {
+  if (Attr.getNumArgs() != 0) {
+    S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << 0;
+    return;
+  }
+
+  if (!isa<TypeDecl>(d)) {
+    S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
+      << Attr.getName() << 9 /* class */;
+    return;
+  }
+
+  d->addAttr(::new (S.Context) DtraceAttr(Attr.getLoc(), S.Context));
+}
+
 static void HandleGlobalAttr(Decl *d, const AttributeList &Attr, Sema &S) {
   if (S.LangOpts.CUDA) {
     // check the attribute arguments.
@@ -2569,7 +2584,7 @@ static void HandleNSConsumedAttr(Decl *d, const AttributeList &attr, Sema &S) {
   if (cf)
     param->addAttr(::new (S.Context) CFConsumedAttr(attr.getLoc(), S.Context));
   else
-    param->addAttr(::new (S.Context) NSConsumedAttr(attr.getLoc(), S.Context));  
+    param->addAttr(::new (S.Context) NSConsumedAttr(attr.getLoc(), S.Context));
 }
 
 static void HandleNSConsumesSelfAttr(Decl *d, const AttributeList &attr,
@@ -2680,7 +2695,7 @@ static void HandleUuidAttr(Decl *d, const AttributeList &Attr, Sema &S) {
 
     bool IsCurly = StrRef.size() > 1 && StrRef.front() == '{' &&
                    StrRef.back() == '}';
-    
+
     // Validate GUID length.
     if (IsCurly && StrRef.size() != 38) {
       S.Diag(Attr.getLoc(), diag::err_attribute_uuid_malformed_guid);
@@ -2691,7 +2706,7 @@ static void HandleUuidAttr(Decl *d, const AttributeList &Attr, Sema &S) {
       return;
     }
 
-    // GUID format is "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX" or 
+    // GUID format is "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX" or
     // "{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}"
     llvm::StringRef::iterator I = StrRef.begin();
     if (IsCurly) // Skip the optional '{'
@@ -2710,7 +2725,7 @@ static void HandleUuidAttr(Decl *d, const AttributeList &Attr, Sema &S) {
       I++;
     }
 
-    d->addAttr(::new (S.Context) UuidAttr(Attr.getLoc(), S.Context, 
+    d->addAttr(::new (S.Context) UuidAttr(Attr.getLoc(), S.Context,
                                           Str->getString()));
   } else
     S.Diag(Attr.getLoc(), diag::warn_attribute_ignored) << "uuid";
@@ -2807,9 +2822,9 @@ static void ProcessInheritableDeclAttr(Scope *scope, Decl *D,
   case AttributeList::AT_reqd_wg_size:
     HandleReqdWorkGroupSize(D, Attr, S); break;
 
-  case AttributeList::AT_init_priority: 
+  case AttributeList::AT_init_priority:
       HandleInitPriorityAttr(D, Attr, S); break;
-      
+
   case AttributeList::AT_packed:      HandlePackedAttr      (D, Attr, S); break;
   case AttributeList::AT_section:     HandleSectionAttr     (D, Attr, S); break;
   case AttributeList::AT_unavailable: HandleUnavailableAttr (D, Attr, S); break;
@@ -2821,6 +2836,7 @@ static void ProcessInheritableDeclAttr(Scope *scope, Decl *D,
   case AttributeList::AT_weak:        HandleWeakAttr        (D, Attr, S); break;
   case AttributeList::AT_weakref:     HandleWeakRefAttr     (D, Attr, S); break;
   case AttributeList::AT_weak_import: HandleWeakImportAttr  (D, Attr, S); break;
+  case AttributeList::AT_dtrace:      HandleDtraceAttr      (D, Attr, S); break;
   case AttributeList::AT_tesla:       HandleTeslaAttr       (D, Attr, S); break;
   case AttributeList::AT_transparent_union:
     HandleTransparentUnionAttr(D, Attr, S);
@@ -3010,7 +3026,7 @@ void Sema::DelayedDiagnostics::add(const DelayedDiagnostic &diag) {
 
     if (StackCapacity)
       memcpy(newBuffer, oldBuffer, StackCapacity * sizeof(DelayedDiagnostic));
-    
+
     delete[] oldBuffer;
     Stack = reinterpret_cast<sema::DelayedDiagnostic*>(newBuffer);
     StackCapacity = newCapacity;
@@ -3106,7 +3122,7 @@ void Sema::EmitDeprecationWarning(NamedDecl *D, llvm::StringRef Message,
   if (isDeclDeprecated(cast<Decl>(CurContext)))
     return;
   if (!Message.empty())
-    Diag(Loc, diag::warn_deprecated_message) << D->getDeclName() 
+    Diag(Loc, diag::warn_deprecated_message) << D->getDeclName()
                                              << Message;
   else {
     if (!UnknownObjCClass)

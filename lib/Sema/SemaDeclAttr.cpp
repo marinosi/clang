@@ -2275,11 +2275,16 @@ static void HandleDtraceAttr(Decl *d, const AttributeList &Attr, Sema &S) {
     return;
   }
 
-  if (!isa<TypeDecl>(d)) {
+  // XXXIM : 1. Fix the error message
+  // XXXIM : 2. We don't want this to apply for classes/structs, but to
+  // specific elements.
+  if (isa<TypeDecl>(d)) {
     S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
       << Attr.getName() << 9 /* class */;
     return;
   }
+
+  llvm::outs() << "Inside HandleDtraceAttr!\n";
 
   d->addAttr(::new (S.Context) DtraceAttr(Attr.getLoc(), S.Context));
 }

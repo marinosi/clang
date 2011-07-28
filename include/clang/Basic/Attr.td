@@ -226,8 +226,8 @@ def DLLExport : InheritableAttr {
 }
 
 def Dtrace : InheritableAttr {
-  let Spellings = ["__dtrace"];
-  let Subjects = [Tag];
+  let Spellings = ["dtrace", "__dtrace"];
+  let Subjects = [NormalVar,ParmVar,Function,DeclStmt];
 }
 
 def DLLImport : InheritableAttr {

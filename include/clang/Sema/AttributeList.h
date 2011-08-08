@@ -165,6 +165,7 @@ public:
     AT_weak_import,
     AT_reqd_wg_size,
     AT_init_priority,
+    AT_instrument,
     IgnoredAttribute,
     UnknownAttribute
   };

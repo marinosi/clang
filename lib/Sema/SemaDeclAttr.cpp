@@ -2269,7 +2269,12 @@ static void HandleDeviceAttr(Decl *d, const AttributeList &Attr, Sema &S) {
   }
 }
 
-static void HandleDtraceAttr(Decl *d, const AttributeList &Attr, Sema &S) {
+static void HandleInstrumentAttr(Decl *d, const AttributeList &Attr, Sema &S) {
+
+  // We only care about C at the moment.
+  if (!S.LangOpts.C99)
+      return;
+
   if (Attr.getNumArgs() != 0) {
     S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << 0;
     return;
@@ -2284,7 +2289,28 @@ static void HandleDtraceAttr(Decl *d, const AttributeList &Attr, Sema &S) {
     return;
   }
 
-  llvm::outs() << "Inside HandleDtraceAttr!\n";
+  d->addAttr(::new (S.Context) InstrumentAttr(Attr.getLoc(), S.Context));
+}
+
+static void HandleDtraceAttr(Decl *d, const AttributeList &Attr, Sema &S) {
+
+  // We only care about C at the moment.
+  if (!S.LangOpts.C99)
+      return;
+
+  if (Attr.getNumArgs() != 0) {
+    S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << 0;
+    return;
+  }
+
+  // XXXIM : 1. Fix the error message
+  // XXXIM : 2. We don't want this to apply for classes/structs, but to
+  // specific elements.
+  if (isa<TypeDecl>(d)) {
+    S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
+      << Attr.getName() << 9 /* class */;
+    return;
+  }
 
   d->addAttr(::new (S.Context) DtraceAttr(Attr.getLoc(), S.Context));
 }
@@ -2842,6 +2868,7 @@ static void ProcessInheritableDeclAttr(Scope *scope, Decl *D,
   case AttributeList::AT_weakref:     HandleWeakRefAttr     (D, Attr, S); break;
   case AttributeList::AT_weak_import: HandleWeakImportAttr  (D, Attr, S); break;
   case AttributeList::AT_dtrace:      HandleDtraceAttr      (D, Attr, S); break;
+  case AttributeList::AT_instrument:      HandleInstrumentAttr      (D, Attr, S); break;
   case AttributeList::AT_tesla:       HandleTeslaAttr       (D, Attr, S); break;
   case AttributeList::AT_transparent_union:
     HandleTransparentUnionAttr(D, Attr, S);

@@ -427,6 +427,11 @@ def InitPriority : InheritableAttr {
   let Args = [UnsignedArgument<"Priority">];
 }
 
+def Instrument : InheritableAttr {
+  let Spellings = ["instrument", "__instrument"];
+  let Subjects = [NormalVar,ParmVar,Function,DeclStmt];
+}
+
 def Section : InheritableAttr {
   let Spellings = ["section"];
   let Args = [StringArgument<"Name">];

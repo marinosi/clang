@@ -50,15 +50,20 @@ class Instrumentation {
 
     /// Inserts the instrumentation before a particular Stmt.
     std::vector<clang::Stmt*> insert(
-        clang::CompoundStmt *c, const clang::Stmt *before,
+        const clang::Stmt *before, clang::CompoundStmt *c,
         clang::ASTContext &ast);
 
     /// Inserts the instrumentation at the beginning of a CompoundStmt.
     std::vector<clang::Stmt*> insert(
         clang::CompoundStmt *c, clang::ASTContext &ast) {
-      if (c->children()) return insert(c, *c->children(), ast);
+      if (c->children()) return insert(*c->children(), c, ast);
       else return append(c, ast);
     }
+
+    /// Inserts the instrumentation before a particular Stmt.
+    std::vector<clang::Stmt*> insert_after(
+        const clang::Stmt *before, clang::CompoundStmt *c,
+        clang::ASTContext &ast);
 
     /// Replaces a number of statements with instrumentation.
     std::vector<clang::Stmt*> replace(clang::CompoundStmt *c, clang::Stmt *s,

@@ -58,7 +58,7 @@ Expr *call(string name, QualType returnType, vector<Expr*>& params,
 /// Insert create(ast) (a vector of Stmnt*) into the children of c
 /// before Stmt before. Returns create(ast) added.
 vector<Stmt*> Instrumentation::insert(
-    CompoundStmt *c, const Stmt *before, ASTContext &ast) {
+    const Stmt *before, CompoundStmt *c, ASTContext &ast) {
 
   vector<Stmt*> newChildren;
   vector<Stmt*> toAdd = create(ast);
@@ -76,6 +76,34 @@ vector<Stmt*> Instrumentation::insert(
   }
 
   assert(inserted && "Didn't find the Stmt to insert before");
+
+  if (newChildren.size() > 0)
+    c->setStmts(ast, &newChildren[0], newChildren.size());
+
+  return toAdd;
+}
+
+/// Insert create(ast) (a vector of Stmnt*) into the children of c
+/// after Stmt after. Returns create(ast) added.
+vector<Stmt*> Instrumentation::insert_after(
+    const Stmt *after, CompoundStmt *c, ASTContext &ast) {
+
+  vector<Stmt*> newChildren;
+  vector<Stmt*> toAdd = create(ast);
+  bool inserted = false;
+
+  for (StmtRange s = c->children(); s; s++) {
+    newChildren.push_back(*s);
+
+    if (*s == after) {
+      // XXX: This will insert toAdd multiple times, should it?
+      for (vector<Stmt*>::iterator i = toAdd.begin(); i != toAdd.end(); i++)
+        newChildren.push_back(*i);
+      inserted = true;
+    }
+  }
+
+  assert(inserted && "Didn't find the Stmt to insert after");
 
   if (newChildren.size() > 0)
     c->setStmts(ast, &newChildren[0], newChildren.size());

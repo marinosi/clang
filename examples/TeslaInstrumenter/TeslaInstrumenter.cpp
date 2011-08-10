@@ -148,12 +148,12 @@ private:
     return contains<string>(i->second, field->getName().str());
   }
 
-  /// Do we need to instrument this function?
-  bool needToInstrumentCall(const FunctionDecl *f) const {
+  /// Do we need to instrument this function call/return?
+  bool needToInstrument(const FuncInstrMap FIMap, const FunctionDecl *f) const {
     if (f == NULL) return false;
     FuncInstrMap::const_iterator I;
-    I = functionCallsToInstr.find(f->getNameAsString());
-    if ( I == functionCallsToInstr.end())
+    I = FIMap.find(f->getNameAsString());
+    if ( I == FIMap.end())
       return false;
     else
       return true;
@@ -382,7 +382,7 @@ void TeslaInstrumenter::Visit(ReturnStmt *r, CompoundStmt *cs, FunctionDecl *f,
 
   if (needToInstrument(f)) {
     warnAddingInstrumentation(r->getLocStart()) << r->getSourceRange();
-    store(FunctionReturn(f, r).insert(cs, r, ast));
+    store(FunctionReturn(f, r).insert(r, cs, ast));
   }
 }
 
@@ -477,7 +477,7 @@ void TeslaInstrumenter::Visit(
 
   FieldAssignment hook(lhs, rhs, dc);
   warnAddingInstrumentation(o->getLocStart()) << o->getSourceRange();
-  store(hook.insert(cs, s, ast));
+  store(hook.insert(s, cs, ast));
 }
 
 void TeslaInstrumenter::Visit(
@@ -487,17 +487,25 @@ void TeslaInstrumenter::Visit(
   if ( isa<FunctionDecl> (ce->getDirectCallee())) {
     FunctionDecl *F = ce->getDirectCallee();
 
-    if (needToInstrumentCall(F)) {
-      vector<Expr *> Params;
-      CallExpr::arg_iterator AI;
-      for ( AI = ce->arg_begin(); AI != ce->arg_end(); ++AI)
-        Params.push_back(*AI);
+    vector<Expr *> Params;
+    CallExpr::arg_iterator AI;
+    for ( AI = ce->arg_begin(); AI != ce->arg_end(); ++AI)
+      Params.push_back(*AI);
 
-      FunctionCall hook(F, Params, functionCallsToInstr[F->getNameAsString()], dc);
+    if (needToInstrument(functionCallsToInstr, F)) {
+      FunctionCall hook(F, Params,
+          functionCallsToInstr[F->getNameAsString()], dc);
       warnAddingInstrumentation(ce->getLocStart()) << ce->getSourceRange();
-      hook.insert(cs, s, ast);
-
+      hook.insert(s, cs, ast);
     }
+
+    if (needToInstrument(functionRetsToInstr, F)) {
+      FunctionCall hook(F, Params,
+          functionRetsToInstr[F->getNameAsString()], dc);
+      warnAddingInstrumentation(ce->getLocStart()) << ce->getSourceRange();
+      hook.insert_after( s, cs, ast);
+    }
+
   }
 }
 

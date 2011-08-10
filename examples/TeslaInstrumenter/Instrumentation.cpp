@@ -55,7 +55,7 @@ FunctionDecl *declareFn(const string& name, QualType returnType,
 Expr *call(string name, QualType returnType, vector<Expr*>& params,
     ASTContext& ast, SourceLocation location = SourceLocation());
 
-/// Insert create(ast) (a vector of Stmnt*) into the children of c 
+/// Insert create(ast) (a vector of Stmnt*) into the children of c
 /// before Stmt before. Returns create(ast) added.
 vector<Stmt*> Instrumentation::insert(
     CompoundStmt *c, const Stmt *before, ASTContext &ast) {
@@ -310,7 +310,7 @@ void TeslaAssertion::searchForReferences(Stmt *s) {
     }
 
     // In tesla.h, now, eventually, previously, invoked, returned,
-    // assigned, dont_care etc. are prepended with __tesla_  
+    // assigned, dont_care etc. are prepended with __tesla_
     bool isRealFunction = !fn->getName().startswith("__tesla");
     vector<Expr*> parameters;
 
@@ -449,6 +449,21 @@ vector<Stmt*> FunctionReturn::create(ASTContext &ast) {
   return statements;
 }
 
+FunctionCall::FunctionCall(FunctionDecl *F, std::vector <clang::Expr *> Params,
+        std::string instr_func, DeclContext *DC) :
+    F(F), Params(Params), instr_func(instr_func), DC(DC) {
+}
+
+vector<Stmt*> FunctionCall::create(ASTContext &ast) {
+  vector<Stmt*> statements;
+
+  vector<Expr*> parameters;
+
+  statements.push_back(call(instr_func,
+        ast.VoidTy, Params, ast));
+
+  return statements;
+}
 
 FieldAssignment::FieldAssignment(MemberExpr *lhs, Expr *rhs, DeclContext *dc)
     : lhs(lhs), rhs(rhs), dc(dc) {

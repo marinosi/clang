@@ -218,6 +218,24 @@ class FunctionReturn : public Instrumentation {
 };
 
 /// A value is being assigned to a structure of interest.
+class FunctionCall : public Instrumentation {
+  public:
+    FunctionCall(clang::FunctionDecl *function,
+            std::vector<clang::Expr *> Params,
+            std::string instr_func, clang::DeclContext *dc);
+
+    virtual std::vector<clang::Stmt*> create(clang::ASTContext &ast);
+
+  private:
+    std::string name;
+
+    clang::FunctionDecl *F;
+    std::vector<clang::Expr *> Params;
+    std::string instr_func;
+    clang::DeclContext *DC;
+};
+
+/// A value is being assigned to a structure of interest.
 class FieldAssignment : public Instrumentation {
   public:
     FieldAssignment(clang::MemberExpr *lhs, clang::Expr *rhs,

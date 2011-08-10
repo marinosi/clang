@@ -52,14 +52,16 @@ using llvm::StringRef;
 namespace {
 
 typedef map<string, vector<string> > FieldMap;
-
+typedef map<string, string> FuncInstrMap;
 
 /// Instruments assignments to tag fields with TESLA assertions.
 class TeslaInstrumenter : public ASTConsumer {
 public:
   TeslaInstrumenter(StringRef filename,
       FieldMap fieldsToInstrument,
-      vector<string> functionsToInstrument);
+      vector<string> functionsToInstrument,
+      FuncInstrMap functionCallsToInstr,
+      FuncInstrMap functionRetsToInstr);
 
   // Visitors
   void Visit(DeclContext *dc, ASTContext &ast);
@@ -74,6 +76,9 @@ public:
       DeclContext* dc, ASTContext &ast);
   void Visit(
       BinaryOperator *o, Stmt *s, CompoundStmt *cs, DeclContext *dc,
+      ASTContext &ast);
+  void Visit(
+      CallExpr *ce, Stmt *s, CompoundStmt *cs, DeclContext *dc,
       ASTContext &ast);
 
   // Make 'special' statements more amenable to instrumentation.
@@ -143,6 +148,17 @@ private:
     return contains<string>(i->second, field->getName().str());
   }
 
+  /// Do we need to instrument this function?
+  bool needToInstrumentCall(const FunctionDecl *f) const {
+    if (f == NULL) return false;
+    FuncInstrMap::const_iterator I;
+    I = functionCallsToInstr.find(f->getNameAsString());
+    if ( I == functionCallsToInstr.end())
+      return false;
+    else
+      return true;
+  }
+
   /// Emit a warning about inserted instrumentation.
   DiagnosticBuilder warnAddingInstrumentation(SourceLocation) const;
 
@@ -160,6 +176,8 @@ private:
   FieldMap fieldsToInstrument;
 
   const vector<string> functionsToInstrument;
+  FuncInstrMap functionCallsToInstr;
+  FuncInstrMap functionRetsToInstr;
 
   vector<Stmt*> instrumentation;
 
@@ -177,6 +195,8 @@ class TeslaAction : public PluginASTAction {
   private:
     map<string, vector<string> > fields;
     vector<string> functions;
+    map<string, string> function_calls;
+    map<string, string> function_rets;
 };
 
 static FrontendPluginRegistry::Add<TeslaAction>
@@ -188,9 +208,12 @@ X("tesla", "Add TESLA instrumentation");
 
 TeslaInstrumenter::TeslaInstrumenter(StringRef filename,
       FieldMap fieldsToInstrument,
-      vector<string> functionsToInstrument)
+      vector<string> functionsToInstrument, FuncInstrMap functionCallsToInstr,
+      FuncInstrMap functionRetsToInstr)
   : filename(filename), fieldsToInstrument(fieldsToInstrument),
-    functionsToInstrument(functionsToInstrument) {
+    functionsToInstrument(functionsToInstrument), functionCallsToInstr(functionCallsToInstr),
+    functionRetsToInstr(functionRetsToInstr)
+{
 }
 
 void TeslaInstrumenter::Initialize(ASTContext& ast) {
@@ -381,6 +404,9 @@ void TeslaInstrumenter::Visit(Expr *e, FunctionDecl *f, Stmt *s,
   if (BinaryOperator *o = dyn_cast<BinaryOperator>(e))
     Visit(o, s, cs, f, ast);
 
+  if (CallExpr *ce = dyn_cast<CallExpr>(e))
+    Visit(ce, s, cs, f, ast);
+
   for (StmtRange child = e->children(); child; child++) {
     if (*child == NULL) continue;
 
@@ -454,6 +480,26 @@ void TeslaInstrumenter::Visit(
   store(hook.insert(cs, s, ast));
 }
 
+void TeslaInstrumenter::Visit(
+    CallExpr *ce, Stmt *s, CompoundStmt *cs, DeclContext *dc,
+    ASTContext &ast) {
+
+  if ( isa<FunctionDecl> (ce->getDirectCallee())) {
+    FunctionDecl *F = ce->getDirectCallee();
+
+    if (needToInstrumentCall(F)) {
+      vector<Expr *> Params;
+      CallExpr::arg_iterator AI;
+      for ( AI = ce->arg_begin(); AI != ce->arg_end(); ++AI)
+        Params.push_back(*AI);
+
+      FunctionCall hook(F, Params, functionCallsToInstr[F->getNameAsString()], dc);
+      warnAddingInstrumentation(ce->getLocStart()) << ce->getSourceRange();
+      hook.insert(cs, s, ast);
+
+    }
+  }
+}
 
 void TeslaInstrumenter::addTeslaDeclaration(
     CompoundStmt *c, DeclContext *dc, ASTContext &ast) {
@@ -574,7 +620,7 @@ void TeslaInstrumenter::writeInstrumentation(
 
       // XXX: Use ___tesla_event constant where possible
       out_stream << "void __tesla_event_function_prologue_" << fn->getName() \
-	<< "(void **tesla_data";
+  << "(void **tesla_data";
       for (size_t j = 0; j < params.size(); j++) {
         // XXX: refactor from writeTemplateVars
         DeclRefExpr *dre = dyn_cast<DeclRefExpr>(params[j]->IgnoreParenCasts());
@@ -590,7 +636,7 @@ void TeslaInstrumenter::writeInstrumentation(
       }
       out_stream << ") { ; } \n";
       out_stream << "void __tesla_event_function_return_" << fn->getName() \
-	<< "(void **tesla_data, int retval) { ; } \n";
+  << "(void **tesla_data, int retval) { ; } \n";
     }
   }
 }
@@ -715,7 +761,8 @@ void TeslaInstrumenter::writeTemplateVars(
 
 ASTConsumer* TeslaAction::CreateASTConsumer(CompilerInstance &CI,
     StringRef filename) {
-  return new TeslaInstrumenter(filename, fields, functions);
+  return new TeslaInstrumenter(filename, fields, functions, function_calls,
+      function_rets);
 }
 
 bool
@@ -751,7 +798,7 @@ TeslaAction::ParseArgs(const CompilerInstance &CI, const vector<string>& args) {
         Diagnostic& diag = CI.getDiagnostics();
         int id = diag.getCustomDiagID(
           Diagnostic::Error,
-          "'field_assign' line in spec file should have 2 argument");
+          "'field_assign' line in spec file should have 2 argument.");
 
         diag.Report(id);
         return false;
@@ -763,14 +810,39 @@ TeslaAction::ParseArgs(const CompilerInstance &CI, const vector<string>& args) {
         Diagnostic& diag = CI.getDiagnostics();
         int id = diag.getCustomDiagID(
           Diagnostic::Error,
-          "'function' line in spec file should have 1 argument");
+            "'function' line in spec file should have 1 argument.");
 
         diag.Report(id);
         return false;
       }
 
       functions.push_back(args[1]);
+    } else if (args[0] == "function_call") {
+        if (args.size() != 3) {
+          Diagnostic& diag = CI.getDiagnostics();
+          int id = diag.getCustomDiagID(
+          Diagnostic::Error,
+            "'function_call' line in spec file should have 2 arguments.");
+
+          diag.Report(id);
+          return false;
+        }
+
+        function_calls[args[1]] = args[2];
+    } else if (args[0] == "function_ret") {
+        if (args.size() != 3) {
+          Diagnostic& diag = CI.getDiagnostics();
+          int id = diag.getCustomDiagID(
+          Diagnostic::Error,
+            "'function_ret' line in spec file should have 2 arguments.");
+
+          diag.Report(id);
+          return false;
+        }
+
+        function_rets[args[1]] = args[2];
     }
+
   }
 
   return true;

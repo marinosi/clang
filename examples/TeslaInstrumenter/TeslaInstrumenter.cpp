@@ -443,21 +443,12 @@ void TeslaInstrumenter::Visit(Expr *e, FunctionDecl *f, Stmt *s,
 }
 
 void TeslaInstrumenter::Visit(
-    BinaryOperator *o, Stmt *s, CompoundStmt *cs, DeclContext *dc,
-    ASTContext &ast) {
+    BinaryOperator *BO, Stmt *S, CompoundStmt *CS, DeclContext *DC,
+    ASTContext &AC) {
 
-  if (!o->isAssignmentOp()) return;
+  if (!BO->isAssignmentOp()) return;
 
-  // We only care about assignments to structure fields.
-  MemberExpr *lhs = dyn_cast<MemberExpr>(o->getLHS());
-  if (lhs == NULL) return;
-
-  // Do we want to instrument this type?
-  assert(isa<FieldDecl>(lhs->getMemberDecl()));
-  if (!needToInstrument(dyn_cast<FieldDecl>(lhs->getMemberDecl()))) return;
-
-  Expr *rhs = o->getRHS();
-  switch (o->getOpcode()) {
+  switch (BO->getOpcode()) {
     case BO_Assign:
     case BO_MulAssign:
     case BO_DivAssign:
@@ -475,9 +466,49 @@ void TeslaInstrumenter::Visit(
       assert(false && "isBinaryInstruction() => non-assign opcode");
   }
 
-  FieldAssignment hook(lhs, rhs, dc);
-  warnAddingInstrumentation(o->getLocStart()) << o->getSourceRange();
-  store(hook.insert(s, cs, ast));
+  // Get the left & right hand side.
+  Expr *LHS = BO->getLHS();
+  Expr *RHS = BO->getRHS();
+
+  // CHECK what's the situation at the right hand side.
+  //InspectRHS(LHS,RHS);
+  if( isa<CallExpr> (RHS)) {
+    CallExpr *ce = dyn_cast<CallExpr> (RHS);
+
+    if ( isa<FunctionDecl> (ce->getDirectCallee())) {
+      FunctionDecl *F = ce->getDirectCallee();
+      if (needToInstrument(functionRetsToInstr, F)) {
+        if (isa<MemberExpr>(LHS) || isa<DeclRefExpr>(LHS)) {
+          vector<Expr *> Params;
+          Params.push_back(dyn_cast<Expr>(LHS));
+
+          FunctionCall hook(F, Params,
+            functionRetsToInstr[F->getNameAsString()], DC);
+          warnAddingInstrumentation(ce->getLocStart()) << ce->getSourceRange();
+          hook.insert_after( S, CS, AC);
+        }
+      }
+    }
+  }
+
+
+  // Handle Left Hand Side of the expression
+  if (isa<MemberExpr>(LHS)) {
+    MemberExpr *lhs = dyn_cast<MemberExpr>(LHS);
+    if (isa <FieldDecl> (lhs->getMemberDecl())) {
+      FieldDecl *FD = dyn_cast<FieldDecl> (lhs->getMemberDecl());
+      if (needToInstrument(FD)) {
+        //XXX: Apply instrumentation or rewrites here.
+        FieldAssignment hook(lhs, RHS, DC);
+        warnAddingInstrumentation(BO->getLocStart()) << BO->getSourceRange();
+        hook.insert(S, CS, AC);
+        //CS->dump();
+      }
+    } else
+      return;
+  }
+
+
 }
 
 void TeslaInstrumenter::Visit(
@@ -500,10 +531,12 @@ void TeslaInstrumenter::Visit(
     }
 
     if (needToInstrument(functionRetsToInstr, F)) {
-      FunctionCall hook(F, Params,
-          functionRetsToInstr[F->getNameAsString()], dc);
-      warnAddingInstrumentation(ce->getLocStart()) << ce->getSourceRange();
-      hook.insert_after( s, cs, ast);
+      if ( ce->getCallReturnType()->isVoidType()) {
+        FunctionCall hook(F, Params,
+            functionRetsToInstr[F->getNameAsString()], dc);
+        warnAddingInstrumentation(ce->getLocStart()) << ce->getSourceRange();
+        hook.insert_after( s, cs, ast);
+      }
     }
 
   }

@@ -44,7 +44,7 @@
 #include <set>
 #include <sstream>
 
-//#include "Instrumentation.h"
+#include "Instrumentation.h"
 
 using namespace clang;
 using namespace std;
@@ -257,7 +257,6 @@ void DtraceInstrumenter::HandleDtraceSingleDecl(FunctionDecl *D, DeclContext *DC
 
 void DtraceInstrumenter::HandleDtraceSingleDecl(FieldDecl *D, DeclContext *DC) {
 	// XXXIM: Nothing here.
-	llvm::outs() << "Handling Dtrace annotated types.\n";
     RegisterInstr(dyn_cast<Decl> (D));
 }
 
@@ -371,91 +370,144 @@ void DtraceInstrumenter::VisitStmt(Stmt *S, CompoundStmt *CS,
 		DeclContext *DC, ASTContext &AC) {
 	// http://clang.llvm.org/doxygen/classclang_1_1Stmt.html
 
-    if (isa <CompoundStmt> (S))
-        llvm::outs() << "Ooops!\n";
-	if (isa <Expr> (S)) {
-		if (isa <BinaryOperator>(S))
-			// Something different for CompoundAssignOperator(?).
-			VisitBinaryOperator(dyn_cast<BinaryOperator> (S), CS, DC, AC);
-        if (isa <CallExpr>(S))
-            VisitCallExpr(dyn_cast<CallExpr> (S), DC);
+    /*
+     *if (isa <CompoundStmt> (S))
+     *    VisitCompoundStmt(dyn_cast<CompoundStmt> (S), DC, AC);
+	 *if (isa <Expr> (S)) {
+	 *    if (isa <BinaryOperator>(S))
+	 *        // Something different for CompoundAssignOperator(?).
+	 *        VisitBinaryOperator(dyn_cast<BinaryOperator> (S), CS, DC, AC);
+     *    if (isa <CallExpr>(S))
+     *        VisitCallExpr(dyn_cast<CallExpr> (S), DC);
+     *}
+     */
+
+  // Special cases that we need to munge a little bit.
+  /*
+   *if( isa<IfStmt> (S))
+   *  Prepare(dyn_cast<IfStmt> (S), AC);
+   *if( isa<SwitchCase> (S))
+   *  Prepare(dyn_cast<SwitchCase> (S), AC);
+   */
+
+  // Now check if it is a CompoundStmt or ReturnStmt.
+  if (isa <CompoundStmt> (S))
+    VisitCompoundStmt(dyn_cast<CompoundStmt> (S), DC, AC);
+  else if (isa <BinaryOperator> (S))
+    VisitBinaryOperator( dyn_cast<BinaryOperator> (S), CS, DC, AC);
+  else
+    for (StmtRange child = S->children(); child; child++) {
+      // It's perfectly legitimate to have a null child (think an IfStmt with
+      // no 'else' clause), but dyn_cast() will choke on it.
+      if (*child == NULL) continue;
+
+      if ( isa<BinaryOperator> (*child))
+        VisitBinaryOperator(dyn_cast<BinaryOperator> (*child), CS, DC, AC);
+      else
+        VisitStmt(*child, CS, DC, AC);
     }
+
 }
 
 void DtraceInstrumenter::VisitBinaryOperator(BinaryOperator *BO,
 		CompoundStmt *CS, DeclContext *DC, ASTContext &AC) {
 
-	if (!BO->isAssignmentOp()) return;
+  if (!BO->isAssignmentOp()) return;
 
-	switch (BO->getOpcode()) {
-		case BO_Assign:
-		case BO_MulAssign:
-		case BO_DivAssign:
-		case BO_RemAssign:
-		case BO_AddAssign:
-		case BO_SubAssign:
-		case BO_ShlAssign:
-		case BO_ShrAssign:
-		case BO_AndAssign:
-		case BO_XorAssign:
-		case BO_OrAssign:
-	        break;
+  switch (BO->getOpcode()) {
+    case BO_Assign:
+    case BO_MulAssign:
+    case BO_DivAssign:
+    case BO_RemAssign:
+    case BO_AddAssign:
+    case BO_SubAssign:
+    case BO_ShlAssign:
+    case BO_ShrAssign:
+    case BO_AndAssign:
+    case BO_XorAssign:
+    case BO_OrAssign:
+      break;
 
-		default:
-			assert(false && "isBinaryInstruction() => non-assign opcode");
+    default:
+      assert(false && "isBinaryInstruction() => non-assign opcode");
+  }
+
+  // Get the left & right hand side.
+  Expr *LHS = BO->getLHS();
+  Expr *RHS = BO->getRHS();
+
+  // XXX: QUITE TRICKY!
+  // CHECK what's the situation at the right hand side.
+  InspectRHS(LHS,RHS);
+
+  // Handle Left Hand Side of the expression
+  if (isa<MemberExpr>(LHS)) {
+    MemberExpr *lhs = dyn_cast<MemberExpr>(LHS);
+    if (isa <FieldDecl> (lhs->getMemberDecl())) {
+      FieldDecl *FD = dyn_cast<FieldDecl> (lhs->getMemberDecl());
+      if (needToInstrument(FD)) {
+        //XXX: Apply instrumentation or rewrites here.
+        FieldAssignment hook(lhs, RHS, DC);
+        warnAddingInstrumentation(BO->getLocStart()) << BO->getSourceRange();
+        hook.insert(dyn_cast<Stmt> (BO), CS, AC);
+        //CS->dump();
+      }
+    } else
+      return;
+  }
+
+  if (isa<DeclRefExpr>(LHS)) {
+    DeclRefExpr *lhs = dyn_cast<DeclRefExpr>(LHS);
+    if (isa <VarDecl> (lhs->getDecl())) {
+      VarDecl *VD = dyn_cast<VarDecl> (lhs->getDecl());
+      if (needToInstrument(VD)) {
+        //XXX: Apply instrumentation or rewrites here.
+        VarAssignment hook(lhs, RHS, DC);
+        warnAddingInstrumentation(BO->getLocStart())
+          << BO->getSourceRange();
+        hook.insert_after(dyn_cast<Stmt> (BO), CS, AC);
+      }
+    } else
+      return;
+  }
+
+  Expr *LE;
+  if (isa<UnaryOperator>(LHS)) {
+    UnaryOperator *UO = dyn_cast<UnaryOperator> (LHS);
+    LE = UO->getSubExpr();
+    if (isa<ImplicitCastExpr> (LE)) {
+
+      ImplicitCastExpr *ICE = dyn_cast<ImplicitCastExpr> (LE);
+      Expr *SE = ICE->getSubExpr();
+      if (isa<DeclRefExpr>(SE)) {
+        DeclRefExpr *lhs = dyn_cast<DeclRefExpr>(SE);
+        if (isa <VarDecl> (lhs->getDecl())) {
+          VarDecl *VD = dyn_cast<VarDecl> (lhs->getDecl());
+          if (needToInstrument(VD)) {
+            //XXX: Apply instrumentation or rewrites here.
+            VarAssignment hook(lhs, RHS, DC);
+            warnAddingInstrumentation(BO->getLocStart())
+              << BO->getSourceRange();
+            hook.insert_after(dyn_cast<Stmt> (BO), CS, AC);
+          }
+        } else
+          return;
+      }
+
     }
-
-    // Get the left & right hand side.
-	Expr *LHS = BO->getLHS();
-	Expr *RHS = BO->getRHS();
-
-    // XXX: QUITE TRICKY!
-    // CHECK what's the situation at the right hand side.
-    InspectRHS(LHS,RHS);
-
-    // Handle Left Hand Side of the expression
-	if (isa<MemberExpr>(LHS)) {
-		MemberExpr *lhs = dyn_cast<MemberExpr>(LHS);
-		if (isa <FieldDecl> (lhs->getMemberDecl())) {
-			FieldDecl *FD = dyn_cast<FieldDecl> (lhs->getMemberDecl());
-			if (needToInstrument(FD)) {
-                //XXX: Apply instrumentation or rewrites here.
-                //FieldAssignment hook(lhs, RHS, DC);
-                warnAddingInstrumentation(BO->getLocStart()) << BO->getSourceRange();
-                //hook.insert(CS, dyn_cast<Stmt> (BO), AC);
-                //CS->dump();
-            }
-		} else
-			return;
-	}
-
-	if (isa<DeclRefExpr>(LHS)) {
-		DeclRefExpr *lhs = dyn_cast<DeclRefExpr>(LHS);
-		if (isa <VarDecl> (lhs->getDecl())) {
-			VarDecl *VD = dyn_cast<VarDecl> (lhs->getDecl());
-			if (needToInstrument(VD)) {
-                //XXX: Apply instrumentation or rewrites here.
-				warnAddingInstrumentation(BO->getLocStart())
-					<< BO->getSourceRange();
-            }
-		} else
-			return;
-	}
-
+  }
 }
 
 void DtraceInstrumenter::VisitCallExpr(CallExpr *CE,
 		DeclContext *DC) {
 
     // Not implemented yet
-    llvm::outs() << "Inside CallExpr\n";
     return;
 
 }
 
 void DtraceInstrumenter::InspectRHS ( Expr *LHS, Expr *RHS ) {
 
-    llvm::outs() << "Inside InspectRHS()\n";
     bool instrumentLHS = false;
 
     // Get the RHS subexpression, if any.
@@ -475,7 +527,6 @@ void DtraceInstrumenter::InspectRHS ( Expr *LHS, Expr *RHS ) {
 		MemberExpr *rhs = dyn_cast<MemberExpr>(RE);
 		if (isa <FieldDecl> (rhs->getMemberDecl())) {
 			FieldDecl *FD = dyn_cast<FieldDecl> (rhs->getMemberDecl());
-            llvm::outs() << "RHS is MemberDecl\n";
 			if (needToInstrument(FD) && LHS->getType()->isPointerType() )
                 instrumentLHS = true;
         }

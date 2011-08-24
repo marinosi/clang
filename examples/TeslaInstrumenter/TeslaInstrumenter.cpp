@@ -552,27 +552,30 @@ void TeslaInstrumenter::Visit(
       Params.push_back(*AI);
 
     if (needToInstrument(functionCallsToInstr, F)) {
-      vector<FuncInstrMap>::iterator A;
-      for ( A = functionCallsToInstr.begin(); A != functionCallsToInstr.end(); A++ ) {
+      // Apply "per automaton" instrumentation.
+      vector<FuncInstrMap>::iterator AM;
+      for ( AM = functionCallsToInstr.begin(); AM != functionCallsToInstr.end();
+          AM++ ) {
         FuncInstrMap::const_iterator FN;
-        FN = A->find(F->getNameAsString());
-        if ( FN == A->end())
+        FN = AM->find(F->getNameAsString());
+        if ( FN == AM->end())
           continue;
 
         FunctionCall hook(F, Params,
-            (*A)[F->getNameAsString()], dc);
+            (*AM)[F->getNameAsString()], dc);
         warnAddingInstrumentation(ce->getLocStart()) << ce->getSourceRange();
         hook.insert(s, cs, ast);
-
       }
     }
 
     if (needToInstrument(functionRetsToInstr, F)) {
       if ( ce->getCallReturnType()->isVoidType()) {
-        vector<FuncInstrMap>::iterator A;
-        for ( A = functionRetsToInstr.begin(); A != functionRetsToInstr.end(); A++ ) {
+        // Apply "per automaton" instrumentation.
+        vector<FuncInstrMap>::iterator AM;
+        for ( AM = functionRetsToInstr.begin(); AM != functionRetsToInstr.end();
+            AM++ ) {
           FunctionCall hook(F, Params,
-              (*A)[F->getNameAsString()], dc);
+              (*AM)[F->getNameAsString()], dc);
           warnAddingInstrumentation(ce->getLocStart()) << ce->getSourceRange();
           hook.insert_after( s, cs, ast);
         }

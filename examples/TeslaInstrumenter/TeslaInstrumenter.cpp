@@ -1,5 +1,6 @@
 /*-
  * Copyright (c) 2011 Jonathan Anderson, Steven J. Murdoch
+ * Copyright (c) 2011 Ilias Marinos
  * All rights reserved.
  *
  * This software was developed by SRI International and the University of
@@ -58,10 +59,10 @@ typedef map<string, string> FuncInstrMap;
 class TeslaInstrumenter : public ASTConsumer {
 public:
   TeslaInstrumenter(StringRef filename,
-      FieldMap fieldsToInstrument,
-      vector<string> functionsToInstrument,
-      FuncInstrMap functionCallsToInstr,
-      FuncInstrMap functionRetsToInstr);
+      vector<FieldMap> fieldsToInstrument,
+      vector< vector<string> > functionsToInstrument,
+      vector<FuncInstrMap> functionCallsToInstr,
+      vector<FuncInstrMap> functionRetsToInstr);
 
   // Visitors
   void Visit(DeclContext *dc, ASTContext &ast);
@@ -133,8 +134,13 @@ private:
 
   /// Do we need to instrument this function?
   bool needToInstrument(const FunctionDecl *f) const {
-    if (f == NULL) return false;
-    return contains<string>(functionsToInstrument, f->getName().str());
+    if (f == NULL)
+      return false;
+
+    for ( vector< vector<string> >::const_iterator I = functionsToInstrument.begin() ; I != functionsToInstrument.end(); I++ )
+      if ( contains<string>((*I), f->getNameAsString()))
+        return true;
+    return false;
   }
 
   /// Do we need to instrument this field?
@@ -142,21 +148,34 @@ private:
     const RecordDecl *record = field->getParent();
     string base = QualType::getAsString(record->getTypeForDecl(), Qualifiers());
 
-    FieldMap::const_iterator i = fieldsToInstrument.find(base);
-    if (i == fieldsToInstrument.end()) return false;
+    for ( vector<FieldMap>::const_iterator I = fieldsToInstrument.begin() ; I != fieldsToInstrument.end() ; I++ ) {
 
-    return contains<string>(i->second, field->getName().str());
+      FieldMap::const_iterator FD = I->find(base);
+      if (FD == I->end())
+        continue;
+
+      if( contains<string>(FD->second, field->getNameAsString()) )
+        return true;
+    }
+
+    return false;
   }
 
   /// Do we need to instrument this function call/return?
-  bool needToInstrument(const FuncInstrMap FIMap, const FunctionDecl *f) const {
-    if (f == NULL) return false;
-    FuncInstrMap::const_iterator I;
-    I = FIMap.find(f->getNameAsString());
-    if ( I == FIMap.end())
+  bool needToInstrument(const vector<FuncInstrMap> FIMapV, const FunctionDecl *f) const {
+    if (f == NULL)
       return false;
-    else
-      return true;
+
+    for ( vector<FuncInstrMap>::const_iterator I = FIMapV.begin() ; I != FIMapV.end(); I++ ) {
+      FuncInstrMap::const_iterator FN;
+      FN = I->find(f->getNameAsString());
+
+      if ( FN == I->end())
+        continue;
+      else
+        return true;
+    }
+    return false;
   }
 
   /// Emit a warning about inserted instrumentation.
@@ -166,24 +185,22 @@ private:
   /// (if the Stmt is already a CompoundStmt, just pass through).
   CompoundStmt* makeCompound(Stmt *s, ASTContext &ast);
 
-
   QualType teslaDataType;
 
   Diagnostic *diag;
   unsigned int teslaWarningId;
 
   const vector<string> typesToInstrument;
-  FieldMap fieldsToInstrument;
 
-  const vector<string> functionsToInstrument;
-  FuncInstrMap functionCallsToInstr;
-  FuncInstrMap functionRetsToInstr;
+  vector<FieldMap> fieldsToInstrument;
+  vector< vector<string> > functionsToInstrument;
+  vector<FuncInstrMap> functionCallsToInstr;
+  vector<FuncInstrMap> functionRetsToInstr;
 
   vector<Stmt*> instrumentation;
 
   vector<TeslaAssertion> assertions;
 };
-
 
 class TeslaAction : public PluginASTAction {
   protected:
@@ -193,10 +210,10 @@ class TeslaAction : public PluginASTAction {
     void PrintHelp(llvm::raw_ostream& ros);
 
   private:
-    map<string, vector<string> > fields;
-    vector<string> functions;
-    map<string, string> function_calls;
-    map<string, string> function_rets;
+    vector<FieldMap> fields;
+    vector< vector<string> > functions;
+    vector<FuncInstrMap> function_calls;
+    vector<FuncInstrMap> function_rets;
 };
 
 static FrontendPluginRegistry::Add<TeslaAction>
@@ -207,9 +224,10 @@ X("tesla", "Add TESLA instrumentation");
 // ********* TeslaInstrumenter (still in the anonymous namespace). ********
 
 TeslaInstrumenter::TeslaInstrumenter(StringRef filename,
-      FieldMap fieldsToInstrument,
-      vector<string> functionsToInstrument, FuncInstrMap functionCallsToInstr,
-      FuncInstrMap functionRetsToInstr)
+      vector<FieldMap> fieldsToInstrument,
+      vector< vector<string> > functionsToInstrument,
+      vector<FuncInstrMap> functionCallsToInstr,
+      vector<FuncInstrMap> functionRetsToInstr)
   : filename(filename), fieldsToInstrument(fieldsToInstrument),
     functionsToInstrument(functionsToInstrument), functionCallsToInstr(functionCallsToInstr),
     functionRetsToInstr(functionRetsToInstr)
@@ -231,16 +249,19 @@ void TeslaInstrumenter::HandleTopLevelDecl(DeclGroupRef d) {
 }
 
 void TeslaInstrumenter::HandleTagDeclDefinition(TagDecl *tag) {
-  if (tag->getAttr<TeslaAttr>()) {
-    assert(isa<RecordDecl>(tag) && "Can't instrument funny tags like enums");
-    RecordDecl *r = dyn_cast<RecordDecl>(tag);
-    string typeName = QualType::getAsString(r->getTypeForDecl(), Qualifiers());
-
-    typedef RecordDecl::field_iterator FieldIterator;
-    for (FieldIterator i = r->field_begin(); i != r->field_end(); i++) {
-      fieldsToInstrument[typeName].push_back((*i)->getName());
-    }
-  }
+  //XXX: This just forwards to HandleTopLevelDecl. Also we don't support
+  //attributes with the TeslaInstrumenter, by that time.
+/*
+ *  if (tag->getAttr<TeslaAttr>()) {
+ *    assert(isa<RecordDecl>(tag) && "Can't instrument funny tags like enums");
+ *    RecordDecl *r = dyn_cast<RecordDecl>(tag);
+ *    string typeName = QualType::getAsString(r->getTypeForDecl(), Qualifiers());
+ *
+ *    typedef RecordDecl::field_iterator FieldIterator;
+ *    for (FieldIterator i = r->field_begin(); i != r->field_end(); i++) {
+ *      fieldsToInstrument[typeName].push_back((*i)->getName());
+ *    }
+ */
 }
 
 void TeslaInstrumenter::HandleTranslationUnit(ASTContext &ast) {
@@ -482,10 +503,17 @@ void TeslaInstrumenter::Visit(
           vector<Expr *> Params;
           Params.push_back(dyn_cast<Expr>(LHS));
 
-          FunctionCall hook(F, Params,
-            functionRetsToInstr[F->getNameAsString()], DC);
-          warnAddingInstrumentation(ce->getLocStart()) << ce->getSourceRange();
-          hook.insert_after( S, CS, AC);
+          // Apply the "per automaton" required instrumentation.
+          vector<FuncInstrMap>::iterator AM;
+          for ( AM = functionRetsToInstr.begin(); AM !=
+              functionRetsToInstr.end(); AM++ )
+          {
+            FunctionCall hook(F, Params,
+                (*AM)[F->getNameAsString()], DC);
+            warnAddingInstrumentation(ce->getLocStart()) << ce->getSourceRange();
+            hook.insert_after( S, CS, AC);
+          }
+
         }
       }
     }
@@ -524,18 +552,30 @@ void TeslaInstrumenter::Visit(
       Params.push_back(*AI);
 
     if (needToInstrument(functionCallsToInstr, F)) {
-      FunctionCall hook(F, Params,
-          functionCallsToInstr[F->getNameAsString()], dc);
-      warnAddingInstrumentation(ce->getLocStart()) << ce->getSourceRange();
-      hook.insert(s, cs, ast);
+      vector<FuncInstrMap>::iterator A;
+      for ( A = functionCallsToInstr.begin(); A != functionCallsToInstr.end(); A++ ) {
+        FuncInstrMap::const_iterator FN;
+        FN = A->find(F->getNameAsString());
+        if ( FN == A->end())
+          continue;
+
+        FunctionCall hook(F, Params,
+            (*A)[F->getNameAsString()], dc);
+        warnAddingInstrumentation(ce->getLocStart()) << ce->getSourceRange();
+        hook.insert(s, cs, ast);
+
+      }
     }
 
     if (needToInstrument(functionRetsToInstr, F)) {
       if ( ce->getCallReturnType()->isVoidType()) {
-        FunctionCall hook(F, Params,
-            functionRetsToInstr[F->getNameAsString()], dc);
-        warnAddingInstrumentation(ce->getLocStart()) << ce->getSourceRange();
-        hook.insert_after( s, cs, ast);
+        vector<FuncInstrMap>::iterator A;
+        for ( A = functionRetsToInstr.begin(); A != functionRetsToInstr.end(); A++ ) {
+          FunctionCall hook(F, Params,
+              (*A)[F->getNameAsString()], dc);
+          warnAddingInstrumentation(ce->getLocStart()) << ce->getSourceRange();
+          hook.insert_after( s, cs, ast);
+        }
       }
     }
 
@@ -808,84 +848,100 @@ ASTConsumer* TeslaAction::CreateASTConsumer(CompilerInstance &CI,
 
 bool
 TeslaAction::ParseArgs(const CompilerInstance &CI, const vector<string>& args) {
-  if (args.size() != 1) {
-    PrintHelp(llvm::errs());
-    return false;
-  }
 
-  ifstream specFile(args[0].c_str());
-  if (!specFile.is_open()) {
-    llvm::errs() << "Failed to open spec file '" << args[0] << "'";
-    return false;
-  }
 
-  while (specFile.good()) {
-    string line;
-    getline(specFile, line);
+  for (unsigned i = 0, e = args.size(); i != e; ++i) {
+    llvm::outs() << "TeslaInstrumenter arg = " << args[i] << "\n";
 
-    vector<string> args;
-    for (size_t i = 0; i != string::npos;) {
-      size_t j = line.find(",", i);
-      args.push_back(line.substr(i, j - i));
-
-      if (j == string::npos) break;
-      i = j + 1;
+    ifstream specFile(args[i].c_str());
+    if (!specFile.is_open()) {
+      llvm::errs() << "Failed to open spec file '" << args[i] << "'";
+      return false;
     }
 
-    if (args.size() == 0) continue;
+    // Per Spec file tmp data.
+    FieldMap tmp_fields;
+    vector<string> tmp_functions;
+    FuncInstrMap tmp_function_calls;
+    FuncInstrMap tmp_function_rets;
 
-    if (args[0] == "field_assign") {
-      if (args.size() != 3) {
-        Diagnostic& diag = CI.getDiagnostics();
-        int id = diag.getCustomDiagID(
-          Diagnostic::Error,
-          "'field_assign' line in spec file should have 2 argument.");
+    while (specFile.good()) {
+      string line;
+      getline(specFile, line);
 
-        diag.Report(id);
-        return false;
+      // Per Spec file arguments.
+      vector<string> spec_args;
+
+      for (size_t i = 0; i != string::npos;) {
+        size_t j = line.find(",", i);
+        spec_args.push_back(line.substr(i, j - i));
+
+        if (j == string::npos) break;
+        i = j + 1;
       }
 
-      fields[args[1]].push_back(args[2]);
-    } else if (args[0] == "function") {
-      if (args.size() != 2) {
-        Diagnostic& diag = CI.getDiagnostics();
-        int id = diag.getCustomDiagID(
-          Diagnostic::Error,
-            "'function' line in spec file should have 1 argument.");
+      if (spec_args.size() == 0) continue;
 
-        diag.Report(id);
-        return false;
-      }
-
-      functions.push_back(args[1]);
-    } else if (args[0] == "function_call") {
-        if (args.size() != 3) {
+      if (spec_args[0] == "field_assign") {
+        if (spec_args.size() != 3) {
           Diagnostic& diag = CI.getDiagnostics();
           int id = diag.getCustomDiagID(
-          Diagnostic::Error,
-            "'function_call' line in spec file should have 2 arguments.");
+              Diagnostic::Error,
+              "'field_assign' line in spec file should have 2 argument.");
 
           diag.Report(id);
           return false;
         }
 
-        function_calls[args[1]] = args[2];
-    } else if (args[0] == "function_ret") {
-        if (args.size() != 3) {
+        tmp_fields[spec_args[1]].push_back(spec_args[2]);
+      } else if (spec_args[0] == "function") {
+        if (spec_args.size() != 2) {
           Diagnostic& diag = CI.getDiagnostics();
           int id = diag.getCustomDiagID(
-          Diagnostic::Error,
-            "'function_ret' line in spec file should have 2 arguments.");
+              Diagnostic::Error,
+              "'function' line in spec file should have 1 argument.");
 
           diag.Report(id);
           return false;
         }
 
-        function_rets[args[1]] = args[2];
+        tmp_functions.push_back(spec_args[1]);
+      } else if (spec_args[0] == "function_call") {
+        if (spec_args.size() != 3) {
+          Diagnostic& diag = CI.getDiagnostics();
+          int id = diag.getCustomDiagID(
+              Diagnostic::Error,
+              "'function_call' line in spec file should have 2 arguments.");
+
+          diag.Report(id);
+          return false;
+        }
+
+        tmp_function_calls[spec_args[1]] = spec_args[2];
+      } else if (spec_args[0] == "function_ret") {
+        if (spec_args.size() != 3) {
+          Diagnostic& diag = CI.getDiagnostics();
+          int id = diag.getCustomDiagID(
+              Diagnostic::Error,
+              "'function_ret' line in spec file should have 2 arguments.");
+
+          diag.Report(id);
+          return false;
+        }
+
+        tmp_function_rets[spec_args[1]] = spec_args[2];
+      }
+
     }
 
-  }
+    // Store all the data of each spec file to the universal vectors that will
+    // be passed to the actual AST Consumer (TeslaInstrumenter).
+    fields.push_back(tmp_fields);
+    functions.push_back(tmp_functions);
+    function_calls.push_back(tmp_function_calls);
+    function_rets.push_back(tmp_function_rets);
 
+  }
   return true;
 }
 

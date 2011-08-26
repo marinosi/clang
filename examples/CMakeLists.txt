@@ -1,4 +1,5 @@
 add_subdirectory(clang-interpreter)
 add_subdirectory(PrintFunctionNames)
 add_subdirectory(TeslaInstrumenter)
+add_subdirectory(TealInstrumenter)
 
